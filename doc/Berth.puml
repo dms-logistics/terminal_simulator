@@ -1,0 +1,17 @@
+@startuml
+
+class Berth {
+    - id: string
+    - name: string
+    - geo_position: dict <<lat: float, lon: float>>
+    - terminal_id: string
+    - terminal_name: string
+    - section_id: string <<section of the port/terminal this berth is in>>
+    - section_name: string
+    - max_length: float
+    - max_depth: float <<max allowed draught at this berth>>
+    - status: string
+    - assigned_vessel_id: string
+}
+
+@enduml

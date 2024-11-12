@@ -1,0 +1,23 @@
+@startuml
+
+class ContainerStack {
+    -block_id : string
+    -stack_bay_id : string
+    -stack_row_id : string
+    -is_40ft_bay : boolean
+    -second_40ft_bay_id : string
+    -is_border_row : boolean
+    -bay_latitude_coordinate : float
+    -bay_longitude_coordinate : float
+    -category : List<string>
+    -cargo_type : List<string>
+    -weight_group : List<string>
+    -service : List<string>
+    -vessel : List<string>
+    -line : List<string>
+    -pol : List<string>
+    -pod : List<string>
+    -full_empty : List<string>
+}
+
+@enduml

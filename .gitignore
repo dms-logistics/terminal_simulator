@@ -1,0 +1,59 @@
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Environments
+.env
+.venv
+.env.swp
+
+# Environments python
+dt_env/
+env_dt/
+.venv
+.env.swp
+
+# Environments python
+dt_env/
+env_dt_rf/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.env.swp
+dt_env/
+
+*.log
+exhibitor.out
+
+.idea
+.vscode
+.vscode/*
+
+
+data/*
+!data/.gitkeep
+
+#repo
+test/*
+logs/*
+tmp/*
+
+.DS_Store
+lib/.DS_Store
+kubeconfig.yaml
+
+
+#exclude all files with .ipynb extension
+*.ipynb
+**/*.ipynb
+
+
+

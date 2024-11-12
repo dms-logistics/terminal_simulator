@@ -1,0 +1,13 @@
+@startuml
+class EquipmentControl{
+    - equipment_pool : dict
+    - point_of_work : dict
+    - pool_assigned_to_pow : dict
+    - work_queues : list
+
+    + activate_work_queue()
+    + deactivate_work_queue()
+    + dispatch_work_instruction()
+    + assigne_itv()
+}
+@enduml

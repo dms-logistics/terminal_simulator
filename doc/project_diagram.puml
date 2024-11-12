@@ -1,0 +1,70 @@
+@startuml
+
+title Repository and File Structure of the Terminal Simulator Project
+
+' left to right direction
+top to bottom direction
+folder "terminal_simulator" {
+    ' [components]
+    ' [data]
+    ' [lib]
+    ' [doc]
+    ' [tests]
+    ' [POC]
+
+    ' left to right direction
+    
+    folder "components" {
+        
+        folder "vessel" {
+           [vessel.py]       
+           }
+
+        folder "yard" {
+           [yard_planning.py]       
+           }
+
+        folder "rail" {
+           [rail_crane.py]       
+           }
+
+        folder "gate" {
+           [external_truck.py]       
+           }
+
+        folder "EC" {
+           [che.py]       
+           }
+        
+        folder "inventory" {
+              [container.py]       
+              }
+    }
+
+    folder "data" {
+        [file 1]
+        [file 2]
+    }
+
+    folder "lib" {
+        [lib 1]
+        [lib 2]
+    }
+
+    folder "doc" {
+        [doc 1]
+        [doc 2]
+    }
+
+    folder "tests" {
+        [test 1]
+        [test 2]
+    }
+
+    folder "POC" {
+        [poc_1.ipynb]
+        [poc_2.ipynb]
+    }
+}
+
+@enduml
