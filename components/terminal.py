@@ -72,39 +72,48 @@ class Terminal():
         logging.info(f"------ POW: {vs_1}")
         logging.info('-'*50)
         # - - - - - - - - - - - - - - - - -
-        self.qc_fetch_requests = simpy.Store(env)
-        self.itv_carry_requests = simpy.Store(env)
-        self.yc_put_requests = simpy.Store(env)
+        self.flag_save_to_mongo = False
 
     def initialize_vessel(self, vessel: Vessel, carrier_id: str, pow: dict):
         """
         Initialize the vessels and start the process to unload or/and load them 
         """
-        logging.info('initialize_vessel')
-        vessel = vessel(env=self.env, carrier_id=carrier_id, pow=pow)
-        logging.info(
-            f'{self.env.now:.2f}: Vessel:{vessel.id} is currently at berth')
-        yield self.env.timeout(random.uniform(5, 10))
-        logging.info(
-            f'{self.env.now:.2f}: Vessel:{vessel.id} is starting operations')
-        # get cranes and start unloading ship
-        unload_done_event = self.env.event()
-        # when more then one crane is being requested
-        # this event is used to handel the speical case when the
-        # fist sezied crane finishes unloading a ship
-        # before the second request gets filled (cancel unneded second request)
-        pow_to_process = []
-        for pow_name, pow_wi_list in pow.items():
-            pow_to_process.append(self.env.process(self.execute_pow(
-                vessel, pow_name, pow_wi_list, unload_done_event)))
+        try:
+            logging.info('initialize_vessel')
+            vessel = vessel(env=self.env, carrier_id=carrier_id, pow=pow)
+            logging.info(
+                f'{self.env.now:.2f}: Vessel:{vessel.id} is currently at berth')
+            yield self.env.timeout(random.uniform(5, 10))
+            logging.info(
+                f'{self.env.now:.2f}: Vessel:{vessel.id} is starting operations')
+            # get cranes and start unloading ship
+            unload_done_event = self.env.event()
+            # when more then one crane is being requested
+            # this event is used to handel the speical case when the
+            # fist sezied crane finishes unloading a ship
+            # before the second request gets filled (cancel unneded second request)
+            pow_to_process = []
+            for pow_name, pow_wi_list in pow.items():
+                pow_to_process.append(self.env.process(self.execute_pow(
+                    vessel, pow_name, pow_wi_list, unload_done_event)))
 
-        # wait for all the cranes to finish
-        yield self.env.all_of(pow_to_process)
-        logging.info(
-            f'{self.env.now:.2f}: Vessel:{vessel.id} has been processed')
-        self.move_logger.push_to_mongo()
-        self.che_logger._push_che_config(sim_id=self.move_logger.sim_id)
-        self.che_logger._push_che_event(sim_id=self.move_logger.sim_id)
+            # wait for all the cranes to finish
+            yield self.env.all_of(pow_to_process)
+            logging.info(
+                f'{self.env.now:.2f}: Vessel:{vessel.id} has been processed')
+            self.move_logger.push_to_mongo()
+            self.che_logger._push_che_config(sim_id=self.move_logger.sim_id)
+            self.che_logger._push_che_event(sim_id=self.move_logger.sim_id)
+            self.flag_save_to_mongo = True
+        except Exception as e:
+            raise e
+        finally:
+            if not self.flag_save_to_mongo:
+                self.move_logger.push_to_mongo()
+                self.che_logger._push_che_config(
+                    sim_id=self.move_logger.sim_id)
+                self.che_logger._push_che_event(sim_id=self.move_logger.sim_id)
+                self.flag_save_to_mongo = True
 
     def execute_pow(self, vessel: Vessel, pow_name: str, pow_wi_list: list, unload_done_event: simpy.Event):
         """

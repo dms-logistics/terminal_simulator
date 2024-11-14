@@ -48,7 +48,7 @@ class QC():
             f'{self.env.now:.2f}: WI {WI.id} - {self.id} fetched {cont.id} from carrier {self.carrier_id}')
         self.fetch_time = self.env.now
         self.che_logger._add_single_che_event(
-            self.env, WI, self.id, "BUSY", "FETCH_END")
+            self.env, WI, self.id, "WAITING", "FETCH_END")
 
     def put(self, env, WI: object, put_time: float):
         self.env = env
@@ -64,7 +64,7 @@ class QC():
             f'{self.env.now:.2f}: WI {WI.id} - {self.id} loaded {cont.id} into carrier {self.carrier_id}')
         self.put_time = self.env.now
         self.che_logger._add_single_che_event(
-            self.env, WI, self.id, "BUSY", "PUT_END")
+            self.env, WI, self.id, "WAITING", "PUT_END")
 
     def shift_on_bord(self, env, WI: object, sob_time: float):
         self.env = env
@@ -98,9 +98,12 @@ class ITV():
     yard_zone = []
     equipment_pool_id = None
 
-    def __init__(self, env, che_logger: CHELog):
+    def __init__(self, env, che_logger: CHELog, id: str = None):
         self.env = env
-        self.id = f"{ITV.type}{ITV.next_id:03d}"
+        if id is None:
+            self.id = f"{ITV.type}{ITV.next_id:03d}"
+        else:
+            self.id = id
         ITV.next_id += 1
         self.che_logger = che_logger
         self.che_logger._add_single_che_event(
@@ -223,9 +226,12 @@ class YC():
     min_duration = 60  # 60 seconds
     max_duration = 60*10  # 10 minutes
 
-    def __init__(self, env, che_logger: CHELog):  # , fetch_time:int, put_time:int
+    def __init__(self, env, che_logger: CHELog, id: str = None):  # , fetch_time:int, put_time:int
         self.env = env
-        self.id = f"{YC.type}{YC.next_id:02d}"
+        if id is None:
+            self.id = f"{YC.type}{YC.next_id:02d}"
+        else:
+            self.id = id
         YC.next_id += 1
         self.che_logger = che_logger
         self.che_logger._add_single_che_event(

@@ -95,13 +95,13 @@ def sim():
     print("starting simulation")
 
     env = simpy.Environment()  # env,  n_itv: int, yc_block_dict: int, pow_dict
-    pow_dict, df_pow = generate_pow(12)
-    ex_pow_dict = get_n_first_keys(pow_dict, 3)
+    pow_dict, df_pow = generate_pow(24*5)
+    ex_pow_dict = get_n_first_keys(pow_dict, 4)
     activity_dict = {"MJRSSD149A": ex_pow_dict}
     pow_carrier_dict = {k: "MJRSSD149A" for k in ex_pow_dict.keys()}
     yc_block_dict = generate_block_dict(df_pow)
     terminal = Terminal(env,
-                        n_itv=4,
+                        n_itv=6,
                         yc_block_dict=yc_block_dict,
                         pow_dict=pow_carrier_dict
                         )
