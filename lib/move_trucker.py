@@ -5,6 +5,7 @@ from lib.connect_db import DataBase
 from components.quay.vessel import Vessel
 from components.ec.che import QC, ITV, YC
 from components.ec.wi import WI
+from lib.utils import convert_sim_time_to_datetime
 import sys
 sys.path.append('../')
 
@@ -69,6 +70,7 @@ class MovementTracker(DataBase):
         self.db = self.getMongoConnection(db_name, conn_str_name)  # Database
         self.collection = self.db[collection_name]  # Collection
         self.move_events = []  # List to store move events
+        self.sim_id = int(datetime.utcnow().strftime('%Y%m%d%H%M%S'))
 
     def log_move(self, vessel: Vessel, pow_name: str, wi: WI, move_stage: str, qc_res: QC = None, itv_res: ITV = None, yc_res: YC = None):
         """ log move event """
@@ -95,6 +97,8 @@ class MovementTracker(DataBase):
         move["fm_bay"] = wi.fm_bay
         move["fm_row"] = wi.fm_row
         move["fm_tier"] = wi.fm_tier
+        move["to_che"] = self._find_to_che(
+            wi, move_stage, qc_res, itv_res, yc_res)
         move["to_block_ref"] = self._find_to_block_ref(wi)
         move["to_block_class"] = self._find_to_block_class(wi, move_stage)
         move["to_block"] = wi.to_block
@@ -106,11 +110,11 @@ class MovementTracker(DataBase):
         move["move_start_time"] = move["move_dispatch_time"]
         move["move_end_time"] = self._set_move_end_time(
             wi, move_stage, qc_res, itv_res, yc_res)
-        move["move_dispatch_datetime"] = self._convert_sim_time_to_datetime(
+        move["move_dispatch_datetime"] = convert_sim_time_to_datetime(
             move["move_dispatch_time"])
-        move["move_start_datetime"] = self._convert_sim_time_to_datetime(
+        move["move_start_datetime"] = convert_sim_time_to_datetime(
             move["move_start_time"])
-        move["move_end_datetime"] = self._convert_sim_time_to_datetime(
+        move["move_end_datetime"] = convert_sim_time_to_datetime(
             move["move_end_time"])
         if move["move_end_time"] is not None and move["move_start_time"] is not None:
             move["mv_duration"] = (move["move_end_time"] -
@@ -123,18 +127,18 @@ class MovementTracker(DataBase):
         if wi.move_kind == "DSCH":
             if move_stage == "FETCH" and qc_res is not None:
                 fm_che = qc_res.id
-            elif move_stage == "CARRY" and itv_res is not None:
+            elif move_stage == "CARRY" and qc_res is not None:
                 fm_che = qc_res.id
-            elif move_stage == "PUT" and yc_res is not None:
+            elif move_stage == "PUT" and itv_res is not None:
                 fm_che = itv_res.id
             else:
                 fm_che = None
         elif wi.move_kind == "LOAD":
             if move_stage == "FETCH" and yc_res is not None:
                 fm_che = yc_res.id
-            elif move_stage == "CARRY" and itv_res is not None:
+            elif move_stage == "CARRY" and yc_res is not None:
                 fm_che = yc_res.id
-            elif move_stage == "PUT" and qc_res is not None:
+            elif move_stage == "PUT" and itv_res is not None:
                 fm_che = itv_res.id
             else:
                 fm_che = None
@@ -144,18 +148,18 @@ class MovementTracker(DataBase):
 
     def _find_to_che(self, wi: WI, move_stage: str, qc_res: QC = None, itv_res: ITV = None, yc_res: YC = None):
         if wi.move_kind == "DSCH":
-            if move_stage == "FETCH" and qc_res is not None:
+            if move_stage == "FETCH" and itv_res is not None:
                 to_che = itv_res.id
-            elif move_stage == "CARRY" and itv_res is not None:
+            elif move_stage == "CARRY" and yc_res is not None:
                 to_che = yc_res.id
             elif move_stage == "PUT" and yc_res is not None:
                 to_che = yc_res.id
             else:
                 to_che = None
         elif wi.move_kind == "LOAD":
-            if move_stage == "FETCH" and yc_res is not None:
+            if move_stage == "FETCH" and itv_res is not None:
                 to_che = itv_res.id
-            elif move_stage == "CARRY" and itv_res is not None:
+            elif move_stage == "CARRY" and qc_res is not None:
                 to_che = qc_res.id
             elif move_stage == "PUT" and qc_res is not None:
                 to_che = qc_res.id
@@ -320,8 +324,8 @@ class MovementTracker(DataBase):
         """Prepare the move events for saving to MongoDB."""
         df_events = pd.DataFrame(self.move_events)
         df_events = df_events.drop_duplicates()
-        df_events['simulation_id'] = int(
-            datetime.utcnow().strftime('%Y%m%d%H%M%S'))
+        # print(f"DEBUG: {df_events.tail()}")
+        df_events['simulation_id'] = self.sim_id
         df_events['created_at'] = datetime.utcnow()
         data_types_infos = {str(col): str(dtype.name)
                             for col, dtype in df_events.dtypes.to_dict().items()}

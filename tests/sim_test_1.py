@@ -25,7 +25,7 @@ def generate_pow(count=48):
     """
     Generate the point of work for the vessel
     """
-    df_wi = pd.read_csv("data/SPARCSN4_WI_clean_07Nov24.csv", header=0)
+    df_wi = pd.read_csv("data/SPARCSN4_WI_clean_13Nov24.csv", header=0)
     df_wi.rename(columns={v: v.lower() for v in df_wi.columns}, inplace=True)
     unique_pow = df_wi['pow'].unique()
     pow_dict = {}
@@ -42,7 +42,7 @@ def generate_pow(count=48):
     return pow_dict, df_pow
 
 
-def get_n_first_keys(pow_dict, n=2):
+def get_n_first_keys(pow_dict, n=3):
     """
     Get the first n keys from the dictionary
     """
@@ -96,12 +96,12 @@ def sim():
 
     env = simpy.Environment()  # env,  n_itv: int, yc_block_dict: int, pow_dict
     pow_dict, df_pow = generate_pow(12)
-    ex_pow_dict = get_n_first_keys(pow_dict, 2)
+    ex_pow_dict = get_n_first_keys(pow_dict, 3)
     activity_dict = {"MJRSSD149A": ex_pow_dict}
     pow_carrier_dict = {k: "MJRSSD149A" for k in ex_pow_dict.keys()}
     yc_block_dict = generate_block_dict(df_pow)
     terminal = Terminal(env,
-                        n_itv=6,
+                        n_itv=4,
                         yc_block_dict=yc_block_dict,
                         pow_dict=pow_carrier_dict
                         )
