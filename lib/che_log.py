@@ -5,6 +5,7 @@ from lib.connect_db import DataBase
 from components.ec.wi import WI
 from lib.utils import convert_sim_time_to_datetime, gather_position_elements, find_fm_block_ref, find_to_block_ref
 import sys
+import os
 sys.path.append('../')
 
 che_config_generic = {
@@ -24,6 +25,7 @@ che_event_generic = {
     "che_id": None,
     "che_status": None,  # idle, busy, moving, waiting, error
     "move_kind": None,
+    "move_kind_description": None,
     "event_time": None,
     "event_datetime": None,
     "event_description": None,
@@ -40,6 +42,7 @@ class CHELog(DataBase):
         self.che_config_list = []
         self.che_event_list = []
         self.sim_id = None
+        self.facility_id = os.environ.get('SIMULATION_FACILITY_ID')
 
     def _add_che_config(self, che: object):
         """Add a CHE configuration to the list."""
@@ -66,18 +69,47 @@ class CHELog(DataBase):
             che_event["pow_id"] = wi.pow
             che_event["wi_id"] = wi.id
             che_event["move_kind"] = wi.move_kind
+            che_event["move_kind_description"] = self._extract_move_stage(
+                event_description)
             che_event["last_position"] = self._get_che_event_last_position(
                 wi, event_description)
         self.che_event_list.append(che_event)
 
+    def _extract_move_stage(self, event_description: str):
+        """Extract the move stage from the event description."""
+        if "CARRY" in event_description:
+            return "CARRY"
+        elif "FETCH" in event_description:
+            return "FETCH"
+        elif "PUT" in event_description:
+            return "PUT"
+        else:
+            return None
+
     def _get_che_event_last_position(self, wi: object, event_description: str):
         """Get the last position of the CHE event."""
+        # - - - - - - - - - - - - - - - - -
         fm_block_ref = find_fm_block_ref(wi)
+        fm_carrier_visit = self._get_fm_carrier_visit(wi)
         fm_position_name = gather_position_elements(
-            wi.carrier_visit, fm_block_ref, wi.fm_block, wi.fm_bay, wi.fm_row, wi.fm_tier)
+            fm_carrier_visit, fm_block_ref, wi.fm_block, wi.fm_bay, wi.fm_row, wi.fm_tier)
         to_block_ref = find_to_block_ref(wi)
+        to_carrier_visit = self._get_to_carrier_visit(wi)
         to_position_name = gather_position_elements(
-            wi.carrier_visit, to_block_ref, wi.to_block, wi.to_bay, wi.to_row, wi.to_tier)
+            to_carrier_visit, to_block_ref, wi.to_block, wi.to_bay, wi.to_row, wi.to_tier)
+        # - - - - - - - - - - - - - - - - -
+        if "FETCH" in event_description:
+            event_description = "FETCH"
+        elif "PUT" in event_description:
+            event_description = "PUT"
+        elif "CARRY_START" in event_description:
+            event_description = "CARRY_FETCH_READY"
+        elif "CARRY_END" in event_description:
+            event_description = "CARRY_PUT_READY"
+        elif "CARRY_COMPLETE" in event_description:
+            event_description = "CARRY_PUT_READY"
+        else:
+            event_description = event_description
         dict_map = {
             "DSCH": {"FETCH": fm_position_name,
                      "CARRY_FETCH_READY": fm_position_name,
@@ -110,6 +142,18 @@ class CHELog(DataBase):
             return dict_map[wi.move_kind][event_description]
         else:
             return None
+
+    def _get_fm_carrier_visit(self, wi: object):
+        if wi.move_kind in ['DSCH', 'SHOB', 'RDSC']:
+            return wi.carrier_visit
+        else:
+            return self.facility_id
+
+    def _get_to_carrier_visit(self, wi: object):
+        if wi.move_kind in ['LOAD', 'SHOB', 'RLOD']:
+            return wi.carrier_visit
+        else:
+            return self.facility_id
 
     # def _get_che_event_last_position(self, wi: object, event_description: str):
     #     """Get the last position of the CHE event."""

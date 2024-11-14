@@ -26,6 +26,7 @@ class Terminal():
     The shipping terminal that unload ships as they arrive
 
     """
+    facility_id = "DMSLOG"
 
     def __init__(self, env, n_itv: int, yc_block_dict: int, pow_dict: list):
         self.env = env          # simulation environment var
@@ -161,14 +162,14 @@ class Terminal():
             f"DEBUG: {self.env.now}: Starting process DSCH-FETCH for {wi.pow}-{cont.id}")
         fetch_duration = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
         yield self.env.process(qc_res.fetch(self.env, wi, fetch_duration))
-        self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="FETCH",
-                                  qc_res=qc_res, itv_res=None, yc_res=None)
         # get and send truck
         # not using a with block becaue
         # another process will release the truck
         logging.info(
             f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} is waiting for a truck')
         itv_res = yield self.itv_pool.get()
+        self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="FETCH",
+                                  qc_res=qc_res, itv_res=itv_res, yc_res=None)
         carry_request_dict = {"wi": wi, "itv_res": itv_res,
                               "qc_res": qc_res, "vessel": vessel}
         # Set the result in the event
@@ -207,7 +208,7 @@ class Terminal():
         yield self.env.process(itv_res.get_release_fm_yc(self.env, wi, yc_res))
 
         self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="CARRY",
-                                  qc_res=qc_res, itv_res=itv_res, yc_res=None)
+                                  qc_res=qc_res, itv_res=itv_res, yc_res=yc_res)
 
         self.itv_pool.put(itv_res)
         put_request_dict = {"wi": wi, "vessel": vessel,
