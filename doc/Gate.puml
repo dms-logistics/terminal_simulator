@@ -1,0 +1,8 @@
+@startuml
+
+class Gate {
+    -number_of_entrance: Integer
+    -number_of_exit: Integer
+}
+
+@enduml

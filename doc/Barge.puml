@@ -1,0 +1,9 @@
+@startuml Barge
+
+class Barge {
+    -temporary_storage_supported: boolean
+    -assigned_work_instructions: List
+    -equipment_pool_id: String
+}
+
+@enduml

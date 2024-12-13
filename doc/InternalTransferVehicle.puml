@@ -1,0 +1,19 @@
+@startuml
+
+class InternalTransferVehicle {
+    - itv_id: string
+    - itv_icon_id: string
+    - itv_type: string
+    - max_speed_kmh: int
+    - login_id: string
+    - twin_carry_capable: boolean
+    - move_type_allowed_twin_20ft_carry: List<string>
+    - assigned_yard_zone: List
+    - active_work_queue: List<wi>
+    - planned_work_queue: List<wi>
+    - equipment_pool_id: string
+
+    + curry_container()
+}
+
+@enduml

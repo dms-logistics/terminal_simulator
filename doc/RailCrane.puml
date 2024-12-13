@@ -1,0 +1,18 @@
+@startuml
+
+class RailCrane {
+    - crane_id: string
+    - crane_icon_id: string
+    - crane_type: string
+    - crane_status: string
+    - login_id: string
+    - twin_lift_capable: boolean
+    - assigned_yard_zone: list
+    - assigned_work_instructions: list
+    - equipment_pool_id: string
+
+    + fetch_container()
+    + put_container()
+}
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml
+
+class Vessel {
+    - id: string
+    - name: string
+    - type: string << deep Sea, feeder or barge >>
+    - characteristics: dict << {length: inMeters, width:, n_bays:, n_rows:} >>
+    - owner: string
+    - line_operator: string
+    - call_id: string
+    - in_voyage_number: string
+    - out_voyage_number: string
+    - visit_phase: string
+    - eta: datetime
+    - etd: datetime
+    - ata: datetime
+    - atd: datetime
+    - start_work_time: datetime
+    - end_work_time: datetime
+    - estimate_number_of_load_moves: int
+    - estimate_number_of_discharge_moves: int
+    - estimate_number_of_sob_moves: int << shift on board >>
+    - estimate_number_of_restow_moves: int
+    - planned_berth_position: string
+    - actual_berth_position: string
+    - discharge_list: list << of tc, position >>
+    - load_list: list << of tc, position >>
+    - shift_on_board_list: list << of tc, position >>
+    - restow_list: list << of tc, position >>
+    - through_list: list << of tc, position >>
+
+    + update_time()
+    + set_estimate_number_of_moves()
+    + set_berth_info()
+    + set_moves_list()
+}
+
+@enduml

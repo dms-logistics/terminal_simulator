@@ -1,0 +1,9 @@
+@startuml 
+class GOS {
+    -job_lists:list
+
+    +receiving_operation()
+    +delivery_operation()
+}
+
+@enduml

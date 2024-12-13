@@ -1,0 +1,31 @@
+@startuml
+class YardBlock {
+    -block_id: String
+    -number_of_bays: Integer  \\' 20ft equivalent
+    -number_of_rows: Integer
+    -max_tiers: Integer
+    -max_capacity_in_teu: Integer
+    -median_latitude_coordinate: Float
+    -median_longitude_coordinate: Float
+    -filling_rate: Float
+    -allocated_yard_crane: Boolean
+    -number_of_allocated_yard_cranes: Integer
+    -allocated_yard_crane_id_1: String
+    -allocated_yard_crane_id_2: String
+    -allocated_yard_crane_id_3: String
+    -allocated_yard_crane_id_4: String
+    -start_event_time_crane_id_1: DateTime
+    -last_event_time_crane_id_1: DateTime
+    -start_event_time_crane_id_2: DateTime
+    -last_event_time_crane_id_2: DateTime
+    -start_event_time_crane_id_3: DateTime
+    -last_event_time_crane_id_3: DateTime
+    -start_event_time_crane_id_4: DateTime
+    -last_event_time_crane_id_4: DateTime
+    -planned_work_instructions: List
+    --
+    +set_crane_start_event_time()
+    +update_crane_last_event_time()
+    +update_filling_rate()
+}
+@enduml

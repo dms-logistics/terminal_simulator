@@ -1,0 +1,6 @@
+In order to use PlanUML correctly install the following libraries:
+
+```sh
+brew install --cask temurin
+brew install graphviz
+```
