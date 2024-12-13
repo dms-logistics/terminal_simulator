@@ -22,6 +22,7 @@ generic_move = {
     "carrier_id": None,
     "move_kind": None,
     "move_kind_description": None,
+    "che_id": None,
     "fm_che": None,
     "fm_block_ref": None,
     "fm_block_class": None,
@@ -64,7 +65,7 @@ class MovementTracker(DataBase):
     """ Class That Collects All Movement Events and Store Them in the Database   
     """
 
-    def __init__(self, simulation_name: str = '', conn_str_name: str = 'MONGO_DEV_CONN', db_name: str = 'terminal_simulator_db', collection_name: str = 'sim_move_events'):
+    def __init__(self, simulation_name: str = '', conn_str_name: str = 'MONGO_DEV_CONN', db_name: str = 'terminal_simulator', collection_name: str = 'sim_move_events'):
         super().__init__()
         self.simulation_name = simulation_name
         self.db = self.getMongoConnection(db_name, conn_str_name)  # Database
@@ -89,6 +90,8 @@ class MovementTracker(DataBase):
         move["carrier_id"] = vessel.carrier_id
         move["move_kind"] = wi.move_kind
         move["move_kind_description"] = move_stage
+        move["che_id"] = self._get_move_che_id(
+            wi, move_stage, qc_res, itv_res, yc_res)
         move["fm_che"] = self._find_fm_che(
             wi, move_stage, qc_res, itv_res, yc_res)
         move["fm_block_ref"] = self._find_fm_block_ref(wi)
@@ -122,6 +125,29 @@ class MovementTracker(DataBase):
         else:
             move["mv_duration"] = None
         self.move_events.append(move)
+
+    def _get_move_che_id(self, wi: WI, move_stage: str, qc_res: QC = None, itv_res: ITV = None, yc_res: YC = None):
+        if wi.move_kind == "DSCH":
+            if move_stage == "FETCH" and qc_res is not None:
+                che_id = qc_res.id
+            elif move_stage == "CARRY" and itv_res is not None:
+                che_id = itv_res.id
+            elif move_stage == "PUT" and yc_res is not None:
+                che_id = yc_res.id
+            else:
+                che_id = None
+        elif wi.move_kind == "LOAD":
+            if move_stage == "FETCH" and yc_res is not None:
+                che_id = yc_res.id
+            elif move_stage == "CARRY" and itv_res is not None:
+                che_id = itv_res.id
+            elif move_stage == "PUT" and qc_res is not None:
+                che_id = qc_res.id
+            else:
+                che_id = None
+        else:
+            che_id = None
+        return che_id
 
     def _find_fm_che(self, wi: WI, move_stage: str, qc_res: QC = None, itv_res: ITV = None, yc_res: YC = None):
         if wi.move_kind == "DSCH":

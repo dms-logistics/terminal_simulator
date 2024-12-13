@@ -38,9 +38,11 @@ class QC():
         fetch_duration = np.clip(
             fetch_duration, QC.min_duration, QC.max_duration)
         cont = WI.container_obj
+        yield self.env.timeout(1)
         self.fetch_dispatch_time = self.env.now
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "BUSY", "FETCH_DISPATCH")
+        yield self.env.timeout(1)
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "BUSY", "FETCH_START")
         yield self.env.timeout(fetch_duration)
@@ -50,16 +52,13 @@ class QC():
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "WAITING", "FETCH_END")
 
-    def put(self, env, WI: object, put_time: float):
+    def put(self, env, WI: object, put_duration: float):
         self.env = env
-        put_time = np.clip(put_time, QC.min_duration, QC.max_duration)
+        put_duration = np.clip(put_duration, QC.min_duration, QC.max_duration)
         cont = WI.container_obj
-        self.put_dispatch_time = self.env.now
-        self.che_logger._add_single_che_event(
-            self.env, WI, self.id, "BUSY", "PUT_DISPATCH")
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "BUSY", "PUT_START")
-        yield self.env.timeout(self.put_time)
+        yield self.env.timeout(put_duration)
         logging.info(
             f'{self.env.now:.2f}: WI {WI.id} - {self.id} loaded {cont.id} into carrier {self.carrier_id}')
         self.put_time = self.env.now
@@ -81,6 +80,40 @@ class QC():
 
     def restow(self, env, WI: object, restow_time: float):
         pass
+
+    def get_ready_to_fetch_fm_itv(self, env, WI: object, target_res: object = None):
+        self.env = env
+        self.che_logger._add_single_che_event(
+            self.env, WI, self.id, "BUSY", "PUT_DISPATCH")
+        self.put_dispatch_time = self.env.now
+        cont = WI.container_obj
+        ready_to_fetch_duration = _get_uniform_duration(1, 10)
+        self.che_logger._add_single_che_event(
+            self.env, WI, self.id, "WAITING", "PUT_WAIT")
+        yield self.env.timeout(ready_to_fetch_duration)
+        self.fetch_wait_time = self.env.now
+        if target_res is not None:
+            target_res_id = target_res.id
+        else:
+            target_res_id = "UNK-RES"
+        logging.info(
+            f'{self.env.now:.2f}: {self.id} is ready to pick-up {cont.id} to {target_res_id}')
+
+    def get_ready_to_put_to_itv(self, env, WI: object, target_res: object = None):
+        self.env = env
+        cont = WI.container_obj
+        # FETCH_WAIT PUT_DISPATCH
+        ready_to_put_duration = _get_uniform_duration(1, 10)
+        self.che_logger._add_single_che_event(
+            self.env, WI, self.id, "WAITING", "FETCH_WAIT")
+        yield self.env.timeout(ready_to_put_duration)
+        self.put_wait_time = self.env.now
+        if target_res is not None:
+            target_res_id = target_res.id
+        else:
+            target_res_id = "UNK-RES"
+        logging.info(
+            f'{self.env.now:.2f}: {self.id} is ready to deliver {cont.id} from {target_res_id}')
 
     # def _get_wait_time_for_truck(self, wait_time_for_truck: float = 3):
     #     return np.random.uniform(
@@ -115,6 +148,9 @@ class ITV():
     def get_ready_to_fetch(self, env, WI: object, target_res: object = None):
         self.env = env
         cont = WI.container_obj
+        self.carry_dispatch_time = self.env.now
+        self.che_logger._add_single_che_event(
+            self.env, WI, self.id, "BUSY", "CARRY_DISPATCH")
         ready_to_fetch_duration = _get_uniform_duration(1, 10)
         yield self.env.timeout(ready_to_fetch_duration)
         self.che_logger._add_single_che_event(
@@ -126,6 +162,8 @@ class ITV():
             target_res_id = "UNK-RES"
         logging.info(
             f'{self.env.now:.2f}: {self.id} is ready to fetch {cont.id} from {target_res_id}')
+        self.che_logger._add_single_che_event(
+            self.env, WI, target_res_id, "IDLE", "FETCH_COMPLETE")
 
     def get_ready_to_put(self, env, WI: object, target_res: object = None):
         self.env = env
@@ -142,18 +180,11 @@ class ITV():
         logging.info(
             f'{self.env.now:.2f}: {self.id} is ready to put: {cont.id} to {target_res_id}')
 
-    def carry(self, env, WI: object, carry_duration: float, fetch_completed_event, fetch_res: object = None, put_res: object = None):
+    def carry(self, env, WI: object, carry_duration: float, fetch_res: object = None, put_res: object = None):
         self.env = env
         carry_duration = np.clip(
             carry_duration, ITV.min_duration, ITV.max_duration)
         cont = WI.container_obj
-        self.carry_dispatch_time = self.env.now
-        self.che_logger._add_single_che_event(
-            self.env, WI, self.id, "BUSY", "CARRY_DISPATCH")
-        yield env.process(self.get_ready_to_fetch(env, WI, fetch_res))
-        fetch_completed_event.succeed()
-        self.che_logger._add_single_che_event(
-            self.env, WI, fetch_res.id, "IDLE", "FETCH_COMPLETE")
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "MOVING", "CARRY_START")
         logging.info(
@@ -245,6 +276,7 @@ class YC():
         self.fetch_dispatch_time = self.env.now
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "BUSY", "FETCH_DISPATCH")
+        yield self.env.timeout(1)
         self.che_logger._add_single_che_event(
             self.env, WI, self.id, "BUSY", "FETCH_START")
         yield self.env.timeout(fetch_duration)

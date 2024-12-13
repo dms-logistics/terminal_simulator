@@ -6,6 +6,7 @@ from scipy.stats import lognorm
 import math
 from components.quay.vessel import Vessel
 from components.ec.che import QC, ITV, YC
+from components.ec.processes import Processes
 from lib.move_trucker import MovementTracker
 from lib.che_log import CHELog
 from dotenv import load_dotenv
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 
 
-class Terminal():
+class Terminal(Processes):
     """
     The shipping terminal that unload ships as they arrive
 
@@ -36,7 +37,7 @@ class Terminal():
         self.yc_block_dict = yc_block_dict  # dict of yard cranes and their block id list
         self.n_yc = len(yc_block_dict.keys())  # number of yard cranes
         self.pow_dict = pow_dict  # pow and their carrier id
-        self.db_name = 'terminal_simulator_db'
+        self.db_name = 'terminal_simulator'
         self.conn_str_name = 'MONGO_DEV_CONN'
         self.move_logger = MovementTracker(
             conn_str_name=self.conn_str_name, db_name=self.db_name, collection_name='sim_move_events')
@@ -73,6 +74,8 @@ class Terminal():
         logging.info('-'*50)
         # - - - - - - - - - - - - - - - - -
         self.flag_save_to_mongo = False
+        # - - - - - - - - - - - - - - - - -
+        super().__init__()
 
     def initialize_vessel(self, vessel: Vessel, carrier_id: str, pow: dict):
         """
@@ -108,11 +111,16 @@ class Terminal():
         except Exception as e:
             raise e
         finally:
+            print(f"Simulation Id: {self.move_logger.sim_id}")
             if not self.flag_save_to_mongo:
-                self.move_logger.push_to_mongo()
-                self.che_logger._push_che_config(
-                    sim_id=self.move_logger.sim_id)
-                self.che_logger._push_che_event(sim_id=self.move_logger.sim_id)
+                if len(self.move_logger.move_events) > 0:
+                    self.move_logger.push_to_mongo()
+                if len(self.che_logger.che_config_list) > 0:
+                    self.che_logger._push_che_config(
+                        sim_id=self.move_logger.sim_id)
+                if len(self.che_logger.che_event_list) > 0:
+                    self.che_logger._push_che_event(
+                        sim_id=self.move_logger.sim_id)
                 self.flag_save_to_mongo = True
 
     def execute_pow(self, vessel: Vessel, pow_name: str, pow_wi_list: list, unload_done_event: simpy.Event):
@@ -141,12 +149,14 @@ class Terminal():
             # have a crane, use it to unload
             logging.info(
                 f'{self.env.now:.2f}: Vessel:{vessel.id} has seized crane {qc_res.id}')
+            self.flag_load_start = False
             while len(pow_wi_list) > 0:
                 # get a container WI
                 wi = pow_wi_list.pop()
                 if wi.move_kind == "DSCH":
                     yield self.env.process(self.process_dsch_wi(wi, qc_res, vessel))
                 elif wi.move_kind == "LOAD":
+                    self.flag_load_start = True
                     yield self.env.process(self.process_load_wi(wi, qc_res, vessel))
                 else:
                     logging.info(
@@ -161,97 +171,6 @@ class Terminal():
         logging.debug(
             f"DEBUG: {self.env.now}: Finished process for {pow_name}")
 
-    def process_dsch_fetch(self, fetch_request: dict, carry_request_result, put_request_result, fetch_completed_event):
-        wi = fetch_request["wi"]
-        vessel = fetch_request["vessel"]
-        qc_res = fetch_request["qc_res"]
-        # get container from vessel
-        cont = wi.container_obj
-        logging.info(
-            f"DEBUG: {self.env.now}: Starting process DSCH-FETCH for {wi.pow}-{cont.id}")
-        fetch_duration = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
-        yield self.env.process(qc_res.fetch(self.env, wi, fetch_duration))
-        # get and send truck
-        # not using a with block becaue
-        # another process will release the truck
-        logging.info(
-            f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} is waiting for a truck')
-        itv_res = yield self.itv_pool.get()
-        self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="FETCH",
-                                  qc_res=qc_res, itv_res=itv_res, yc_res=None)
-        carry_request_dict = {"wi": wi, "itv_res": itv_res,
-                              "qc_res": qc_res, "vessel": vessel}
-        # Set the result in the event
-        carry_request_result.succeed(carry_request_dict)
-        # Start the carry and put processes in the background
-        # This will start carry process and put process without blocking
-        self.env.process(self.process_dsch_carry(
-            carry_request_result, put_request_result, fetch_completed_event))
-        self.env.process(
-            self.process_dsch_put(put_request_result))
-
-    def process_dsch_carry(self, carry_request_result, put_request_result, fetch_completed_event):
-        carry_request = yield carry_request_result
-        wi = carry_request["wi"]
-        cont = wi.container_obj
-        itv_res = carry_request["itv_res"]
-        qc_res = carry_request["qc_res"]
-        vessel = carry_request["vessel"]
-        logging.info(
-            f"DEBUG: {self.env.now}: Starting process DSCH-CARRY for {wi.pow}-{cont.id}")
-        yield self.env.timeout(random.uniform(1, 3))
-        # carry ready and carry ongoing ...
-        logging.info(
-            f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} has seized truck {itv_res.id}')
-        carry_duration = float(
-            lognorm.rvs(s=0.45, scale=math.exp(6.7)))
-        yield self.env.process(itv_res.carry(self.env, wi, carry_duration, fetch_completed_event, qc_res))
-        # request a yard crane and put the container in the yard
-        # yard crane for the block that the container is going to
-        dest_block = wi.to_block
-        yz_yc_id = next(
-            (key for key, value_list in self.yc_block_dict.items() if dest_block in value_list), None)
-        yc_res = yield self.yc_pool.get(lambda i: i.id == yz_yc_id)
-        yield self.env.process(itv_res.get_ready_to_put(self.env, wi, yc_res))
-        yield self.env.process(yc_res.get_ready_to_fetch_fm_itv(self.env, wi, carry_res=itv_res))
-        yield self.env.process(itv_res.get_release_fm_yc(self.env, wi, yc_res))
-
-        self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="CARRY",
-                                  qc_res=qc_res, itv_res=itv_res, yc_res=yc_res)
-
-        self.itv_pool.put(itv_res)
-        put_request_dict = {"wi": wi, "vessel": vessel,
-                            "qc_res": qc_res, "itv_res": itv_res, "yc_res": yc_res}
-        put_request_result.succeed(put_request_dict)
-        # self.yc_put_requests.put(put_request)
-
-    def process_dsch_put(self, put_request_result):
-        put_request = yield put_request_result
-        wi = put_request["wi"]
-        cont = wi.container_obj
-        vessel = put_request["vessel"]
-        qc_res = put_request["qc_res"]
-        itv_res = put_request["itv_res"]
-        yc_res = put_request["yc_res"]
-        logging.info(
-            f"DEBUG: {self.env.now}: Starting process DSCH-PUT for {wi.pow}-{cont.id}")
-        put_time = float(lognorm.rvs(s=0.35, scale=math.exp(5.5)))
-        yield self.env.process(yc_res.put(self.env, wi, put_time))
-
-        self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="PUT",
-                                  qc_res=qc_res, itv_res=itv_res, yc_res=yc_res)
-
-        self.che_logger._add_single_che_event(
-            self.env, wi, yc_res.id, "IDLE", "PUT_COMPLETE")
-        self.yc_pool.put(yc_res)
-        logging.info(
-            f'{self.env.now:.2f}: WI n°{wi.id} for {wi.move_kind} of {cont.id} from {vessel.id} to {wi.to_block} is completed')
-
-    # def carry_put_wrapper(self, carry_request, put_request):
-    #     """Wrapper function to run process_dsch_carry as a SimPy process."""
-    #     yield self.env.process(self.process_dsch_carry(carry_request, put_request))
-    #     yield self.env.process(self.process_dsch_put(put_request))
-
     def process_dsch_wi(self, wi, qc_res, vessel):
         fetch_request = {"wi": wi, "qc_res": qc_res, "vessel": vessel}
         # Create the event for the carry process
@@ -265,191 +184,60 @@ class Terminal():
             fetch_request, carry_request_result, put_request_result, fetch_completed_event))
         # self.carry_ready_event = yield self.carry_ready_event
         yield self.env.all_of([fetch_process, fetch_completed_event])
+
+    def process_load_wi(self, wi, qc_res, vessel):
+        # request a yard crane and fetch the container from the block
+        # yard crane for the block that the container is coming from
+        logging.info(
+            f"DEBUG: {self.env.now}: Starting process LOAD for {wi.pow}-{wi.container_obj.id}")
+        origin_block = wi.fm_block
+        yz_yc_id = next(
+            (key for key, value_list in self.yc_block_dict.items() if origin_block in value_list), None)
+        yc_res = yield self.yc_pool.get(lambda i: i.id == yz_yc_id)
+        logging.info(
+            f'{self.env.now:.2f}: {yc_res.id} has been seized to process WI {wi.id} and fetch {wi.container_obj.id} from {wi.fm_block}')
+        # build the fetch from yard block request
+        fetch_request = {"wi": wi, "yc_res": yc_res,
+                         "qc_res": qc_res, "vessel": vessel}
+        # Create the event for the carry, put  and YC fetch completed process
+        carry_request_result = self.env.event()
+        put_request_result = self.env.event()
+        fetch_completed_event = self.env.event()
+        # fetch_completed_event.callbacks.append(fetch_completed_event_callback)
+
+        # Start only the YC fetch process
+        fetch_process = self.env.process(self.process_load_fetch(
+            fetch_request, carry_request_result, put_request_result, fetch_completed_event))
+        yield self.env.all_of([fetch_process, fetch_completed_event])
         # yield fetch_process
-        # yield fetch_completed_event
-        # # After fetch, trigger carry and put processes in the background
-        # # These processes will run independently
-        # carry_process = self.env.process(self.process_dsch_carry(
-        #     carry_request_result, put_request_result))
-        # put_process = self.env.process(
-        #     self.process_dsch_put(put_request_result))
-        # # Ensure all processes are correctly yielded
-        # yield carry_process
-        # yield put_process
-        # # After fetch, start the carry process, but in the background, continue the loop
-        # yield self.env.process(self.process_dsch_carry(carry_request_result, put_request_result))
 
-        # # Once carry is complete, start the put process
-        # yield self.env.process(self.process_dsch_put(put_request_result))
-    # def process_dsch_wi(self, wi, qc_res, vessel):
-    #     fetch_request = {"wi": wi, "qc_res": qc_res, "vessel": vessel}
-    #     carry_request = self.env.event()
-    #     put_request = self.env.event()
-    #     # self.qc_fetch_requests.put(fetch_request)
-    #     # Start only the fetch process
-    #     yield self.env.process(self.process_dsch_fetch(fetch_request, carry_request))
-    #     # Start the carry and put processes in background
-    #     carry_put_thread = threading.Thread(
-    #         target=self.carry_put_wrapper, args=(carry_request, put_request))
-    #     # Start the threads
-    #     carry_put_thread.start()
-
-    # def process_dsch_wi(self, wi, qc_res, vessel):
-    #     # get container from vessel
+    # def process_load_wi(self, wi, qc_res, vessel):
     #     cont = wi.container_obj
-    #     logging.debug(
-    #         f"DEBUG: {self.env.now}: Starting process DSCH for {wi.pow}-{cont.id}")
-    #     fetch_duration = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
-    #     yield self.env.process(qc_res.fetch(self.env, wi, fetch_duration))
-    #     self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="FETCH",
-    #                               qc_res=qc_res, itv_res=None, yc_res=None)
-    #     # get and send truck
-    #     # not using a with block becaue
-    #     # another process will release the truck
-    #     logging.info(
-    #         f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} is waiting for a truck')
-    #     itv_res = yield self.itv_pool.get()
-    #     yield self.env.timeout(random.uniform(1, 3))
-    #     # carry ready and carry ongoing ...
-    #     logging.info(
-    #         f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} has seized truck {itv_res.id}')
-    #     carry_duration = float(
-    #         lognorm.rvs(s=0.45, scale=math.exp(6.7)))
-    #     yield self.env.process(itv_res.carry(self.env, wi, carry_duration, qc_res))
-    #     # request a yard crane and put the container in the yard
-    #     # yard crane for the block that the container is going to
-    #     dest_block = wi.to_block
+    #     # request a yard crane
+    #     dest_block = wi.fm_block
     #     yz_yc_id = next(
     #         (key for key, value_list in self.yc_block_dict.items() if dest_block in value_list), None)
     #     yc_res = yield self.yc_pool.get(lambda i: i.id == yz_yc_id)
-    #     yield self.env.process(itv_res.get_ready_to_put(self.env, wi, yc_res))
-    #     yield self.env.process(yc_res.get_ready_to_fetch_fm_itv(self.env, wi, carry_res=itv_res))
-    #     yield self.env.process(itv_res.get_release_fm_yc(self.env, wi, yc_res))
-
-    #     self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="CARRY",
-    #                               qc_res=qc_res, itv_res=itv_res, yc_res=None)
-
-    #     self.itv_pool.put(itv_res)
-    #     put_time = float(lognorm.rvs(s=0.35, scale=math.exp(5.5)))
-    #     yield self.env.process(yc_res.put(self.env, wi, put_time))
-
-    #     self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="PUT",
-    #                               qc_res=qc_res, itv_res=itv_res, yc_res=yc_res)
-
-    #     self.che_logger._add_single_che_event(
-    #         self.env, wi, yc_res.id, "IDLE", "PUT_COMPLETE")
+    #     fetch_duration = float(lognorm.rvs(s=0.35, scale=math.exp(5.5)))
+    #     # get the container from the yard
+    #     yc_res.fetch(self.env, wi, fetch_duration)
+    #     # request an internal truck
+    #     itv_res = yield self.itv_pool.get()
+    #     itv_res.get_ready_to_fetch(self.env, wi)
+    #     # put the container on the truck
+    #     yc_res.get_ready_to_put_to_itv(self.env, wi, carry_res=itv_res)
     #     self.yc_pool.put(yc_res)
     #     logging.info(
-    #         f'{self.env.now:.2f}: WI n°{wi.id} for {wi.move_kind} of {cont.id} from {vessel.id} to {wi.to_block} is completed')
-    # def process_dsch_fetch(self):
-    #     while True:
-    #         fetch_request = yield self.qc_fetch_requests.get()
-    #         wi = fetch_request["wi"]
-    #         vessel = fetch_request["vessel"]
-    #         qc_res = fetch_request["qc_res"]
-    #         # get container from vessel
-    #         cont = wi.container_obj
-    #         logging.info(
-    #             f"DEBUG: {self.env.now}: Starting process DSCH-FETCH for {wi.pow}-{cont.id}")
-    #         fetch_duration = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
-    #         yield self.env.process(qc_res.fetch(self.env, wi, fetch_duration))
-    #         self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="FETCH",
-    #                                   qc_res=qc_res, itv_res=None, yc_res=None)
-    #         # get and send truck
-    #         # not using a with block becaue
-    #         # another process will release the truck
-    #         logging.info(
-    #             f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} is waiting for a truck')
-    #         itv_res = yield self.itv_pool.get()
-    #         carry_request = {"wi": wi, "itv_res": itv_res,
-    #                          "qc_res": qc_res, "vessel": vessel}
-    #         self.itv_carry_requests.put(carry_request)
-
-    # def process_dsch_carry(self):
-    #     while True:
-    #         carry_request = yield self.itv_carry_requests.get()
-    #         wi = carry_request["wi"]
-    #         cont = wi.container_obj
-    #         itv_res = carry_request["itv_res"]
-    #         qc_res = carry_request["qc_res"]
-    #         vessel = carry_request["vessel"]
-    #         logging.info(
-    #             f"DEBUG: {self.env.now}: Starting process DSCH-CARRY for {wi.pow}-{cont.id}")
-    #         yield self.env.timeout(random.uniform(1, 3))
-    #         # carry ready and carry ongoing ...
-    #         logging.info(
-    #             f'{self.env.now:.2f}: {cont.id} from carrier {vessel.id} has seized truck {itv_res.id}')
-    #         carry_duration = float(
-    #             lognorm.rvs(s=0.45, scale=math.exp(6.7)))
-    #         yield self.env.process(itv_res.carry(self.env, wi, carry_duration, qc_res))
-    #         # request a yard crane and put the container in the yard
-    #         # yard crane for the block that the container is going to
-    #         dest_block = wi.to_block
-    #         yz_yc_id = next(
-    #             (key for key, value_list in self.yc_block_dict.items() if dest_block in value_list), None)
-    #         yc_res = yield self.yc_pool.get(lambda i: i.id == yz_yc_id)
-    #         yield self.env.process(itv_res.get_ready_to_put(self.env, wi, yc_res))
-    #         yield self.env.process(yc_res.get_ready_to_fetch_fm_itv(self.env, wi, carry_res=itv_res))
-    #         yield self.env.process(itv_res.get_release_fm_yc(self.env, wi, yc_res))
-
-    #         self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="CARRY",
-    #                                   qc_res=qc_res, itv_res=itv_res, yc_res=None)
-
-    #         self.itv_pool.put(itv_res)
-    #         put_request = {"wi": wi, "vessel": vessel,
-    #                        "qc_res": qc_res, "itv_res": itv_res, "yc_res": yc_res}
-    #         self.yc_put_requests.put(put_request)
-
-    # def process_dsch_put(self):
-    #     while True:
-    #         put_request = yield self.yc_put_requests.get()
-    #         wi = put_request["wi"]
-    #         cont = wi.container_obj
-    #         vessel = put_request["vessel"]
-    #         qc_res = put_request["qc_res"]
-    #         itv_res = put_request["itv_res"]
-    #         yc_res = put_request["yc_res"]
-    #         logging.info(
-    #             f"DEBUG: {self.env.now}: Starting process DSCH-PUT for {wi.pow}-{cont.id}")
-    #         put_time = float(lognorm.rvs(s=0.35, scale=math.exp(5.5)))
-    #         yield self.env.process(yc_res.put(self.env, wi, put_time))
-
-    #         self.move_logger.log_move(vessel=vessel, pow_name=wi.pow, wi=wi, move_stage="PUT",
-    #                                   qc_res=qc_res, itv_res=itv_res, yc_res=yc_res)
-
-    #         self.che_logger._add_single_che_event(
-    #             self.env, wi, yc_res.id, "IDLE", "PUT_COMPLETE")
-    #         self.yc_pool.put(yc_res)
-    #         logging.info(
-    #             f'{self.env.now:.2f}: WI n°{wi.id} for {wi.move_kind} of {cont.id} from {vessel.id} to {wi.to_block} is completed')
-
-    def process_load_wi(self, wi, qc_res, vessel):
-        cont = wi.container_obj
-        # request a yard crane
-        dest_block = wi.fm_block
-        yz_yc_id = next(
-            (key for key, value_list in self.yc_block_dict.items() if dest_block in value_list), None)
-        yc_res = yield self.yc_pool.get(lambda i: i.id == yz_yc_id)
-        fetch_duration = float(lognorm.rvs(s=0.35, scale=math.exp(5.5)))
-        # get the container from the yard
-        yc_res.fetch(self.env, wi, fetch_duration)
-        # request an internal truck
-        itv_res = yield self.itv_pool.get()
-        itv_res.get_ready_to_fetch(self.env, wi)
-        # put the container on the truck
-        yc_res.get_ready_to_put_to_itv(self.env, wi, carry_res=itv_res)
-        self.yc_pool.put(yc_res)
-        logging.info(
-            f'{self.env.now:.2f}: {yc_res.id} released of fetch {cont.id} from {wi.fm_block}')
-        carry_duration = float(lognorm.rvs(s=0.45, scale=math.exp(6.7)))
-        # carry the container to the quay crane
-        itv_res.carry(self.env, wi, carry_duration)
-        itv_res.get_ready_to_put(self.env, wi)
-        # put the container on the quay crane
-        put_time = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
-        qc_res.put(self.env, wi, put_time)
-        # release the truck
-        itv_res.get_release_fm_qc(self.env, wi)
-        self.itv_pool.put(itv_res)
-        self.che_logger._add_single_che_event(
-            env, WI, qc_res.id, "IDLE", "PUT_COMPLETE")
+    #         f'{self.env.now:.2f}: {yc_res.id} released of fetch {cont.id} from {wi.fm_block}')
+    #     carry_duration = float(lognorm.rvs(s=0.45, scale=math.exp(6.7)))
+    #     # carry the container to the quay crane
+    #     itv_res.carry(self.env, wi, carry_duration)
+    #     itv_res.get_ready_to_put(self.env, wi)
+    #     # put the container on the quay crane
+    #     put_time = float(lognorm.rvs(s=0.55, scale=math.exp(4.5)))
+    #     qc_res.put(self.env, wi, put_time)
+    #     # release the truck
+    #     itv_res.get_release_fm_qc(self.env, wi)
+    #     self.itv_pool.put(itv_res)
+    #     self.che_logger._add_single_che_event(
+    #         env, WI, qc_res.id, "IDLE", "PUT_COMPLETE")

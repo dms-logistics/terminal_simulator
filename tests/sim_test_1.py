@@ -21,10 +21,16 @@ def df_row_to_wi(row):
     return WI(**dict_wi)
 
 
-def generate_pow(count=48):
+def generate_pow(count=[10, 10, 10, 10, 10, 10, 10, 10, 10],
+                 move_kind_list=["DSCH", "LOAD"]):
     """
     Generate the point of work for the vessel
+    count: list of number of instruction to test for each type : 
+    [DSCH, LOAD, SHOB, YARD, SHFT, DLVR, RECV, RLOD, RDSC]
     """
+    if move_kind_list is None:
+        move_kind_list = ["DSCH", "LOAD", "SHOB", "YARD",
+                          "SHFT", "DLVR", "RECV", "RLOD", "RDSC"]
     df_wi = pd.read_csv("data/SPARCSN4_WI_clean_13Nov24.csv", header=0)
     df_wi.rename(columns={v: v.lower() for v in df_wi.columns}, inplace=True)
     unique_pow = df_wi['pow'].unique()
@@ -34,11 +40,20 @@ def generate_pow(count=48):
         pow_dict[pow_name] = []
         df_tmp = df_wi[df_wi['pow'] == pow_name].copy()
         df_tmp = df_tmp.drop_duplicates(subset=['id'], keep='first')
-        df_tmp = df_tmp.head(count)
-        for index, row in df_tmp.iterrows():
+        df_tmp_f = pd.DataFrame()
+        for i, mv_type in enumerate(move_kind_list):
+            df_tmp_tmp = df_tmp[df_tmp['move_kind'] == mv_type].head(count[i])
+            if not df_tmp_tmp.empty:
+                df_tmp_f = pd.concat([df_tmp_f, df_tmp_tmp], ignore_index=True)
+        for index, row in df_tmp_f.iterrows():
             pow_dict[pow_name].append(df_row_to_wi(row))
         pow_dict[pow_name].sort(key=lambda wi: wi.id, reverse=False)
-        df_pow = pd.concat([df_pow, df_tmp], ignore_index=True)
+        df_pow = pd.concat([df_pow, df_tmp_f], ignore_index=True)
+    df_pow_report = df_pow.groupby(['pow', 'move_kind']).size().reset_index(
+        name='count').sort_values(by=['pow', 'move_kind'])
+    print("- "*50)
+    print(df_pow_report)
+    print("- "*50)
     return pow_dict, df_pow
 
 
@@ -51,19 +66,35 @@ def get_n_first_keys(pow_dict, n=3):
     return {key: pow_dict[key] for key in first_keys}
 
 
-def generate_block_dict(df_pow):
+def generate_block_dict(df_pow, move_kind_list=["DSCH", "LOAD"]):
     """
     Generate the block dictionary for the yard cranes
     """
+    # all_block_list = []
+    # for i, mv_type in enumerate(move_kind_list):
+    #     if mv_type in ['DSCH', "RDSC"]:
+    #         all_block_list += df_pow.loc[df_pow.move_kind == mv_type].to_block.unique()
+    #     elif mv_type in ['LOAD', "RLOD"]:
+    #         all_block_list += df_pow.loc[df_pow.move_kind == mv_type].fm_block.unique()
+    #     elif mv_type in ['YARD', 'SHFT']:
+    #         block_list_fm = df_pow.loc[df_pow.move_kind == mv_type].fm_block.unique()
+    #         block_list_to = df_pow.loc[df_pow.move_kind == mv_type].to_block.unique()
+    #         all_block_list += list(set(block_list_fm).union(set(block_list_to)))
+    #     elif mv_type == 'DLVR':
+    #         all_block_list += df_pow.loc[df_pow.move_kind == mv_type].fm_block.unique()
+    #     elif mv_type == 'RECV':
+    #         all_block_list += df_pow.loc[df_pow.move_kind == mv_type].to_block.unique()
     dsch_block = df_pow.loc[df_pow.move_kind == 'DSCH'].to_block.unique()
-    # load_block = df_pow.loc[df_pow.move_kind == 'LOAD'].fm_block.unique()
-    load_block = []
+    load_block = df_pow.loc[df_pow.move_kind == 'LOAD'].fm_block.unique()
     all_block_list = list(set(dsch_block).union(set(load_block)))
     bloc_dict = {}
     yc_id = 1
     for b in all_block_list:
         bloc_dict[f"RTG{yc_id:02d}"] = [b]
         yc_id += 1
+    print("- "*50)
+    print(bloc_dict)
+    print("- "*50)
     return bloc_dict
 
 
@@ -95,8 +126,9 @@ def sim():
     print("starting simulation")
 
     env = simpy.Environment()  # env,  n_itv: int, yc_block_dict: int, pow_dict
-    pow_dict, df_pow = generate_pow(24*5)
-    ex_pow_dict = get_n_first_keys(pow_dict, 4)
+    pow_dict, df_pow = generate_pow(
+        count=[10, 10], move_kind_list=["DSCH", "LOAD"])
+    ex_pow_dict = get_n_first_keys(pow_dict, 3)
     activity_dict = {"MJRSSD149A": ex_pow_dict}
     pow_carrier_dict = {k: "MJRSSD149A" for k in ex_pow_dict.keys()}
     yc_block_dict = generate_block_dict(df_pow)
