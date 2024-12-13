@@ -1,8 +1,0 @@
-@startuml
-class YardPlanning {
-    -version: String
-
-    +assign_block()
-    +assign_slot()
-}
-@enduml

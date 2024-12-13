@@ -1,5 +1,0 @@
-@startuml
-class TOS {
-    -version: String
-}
-@enduml
