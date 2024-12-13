@@ -55,5 +55,6 @@ kubeconfig.yaml
 *.ipynb
 **/*.ipynb
 
-
+doc/*
+!doc/.gitkeep
 
