@@ -29,7 +29,7 @@ class Terminal(Processes):
     """
     facility_id = "DMSLOG"
 
-    def __init__(self, env, n_itv: int, yc_block_dict: int, pow_dict: list):
+    def __init__(self, env, n_itv: int, yc_block_dict: int, pow_dict: list, output_to_csv_file: bool = False):
         self.env = env          # simulation environment var
         # number of quay cranes ( = total pow)
         self.n_qc = len(pow_dict.keys())
@@ -39,10 +39,13 @@ class Terminal(Processes):
         self.pow_dict = pow_dict  # pow and their carrier id
         self.db_name = 'terminal_simulator'
         self.conn_str_name = 'MONGO_DEV_CONN'
+        self.output_to_csv_file = output_to_csv_file
         self.move_logger = MovementTracker(
-            conn_str_name=self.conn_str_name, db_name=self.db_name, collection_name='sim_move_events')
+            conn_str_name=self.conn_str_name, db_name=self.db_name, collection_name='sim_move_events',
+            output_to_csv_file=self.output_to_csv_file)
         self.che_logger = CHELog(
-            db_name=self.db_name, string_conncetion=self.conn_str_name)
+            db_name=self.db_name, string_conncetion=self.conn_str_name,
+            output_to_csv_file=self.output_to_csv_file)
 
         # convert counts to resourc pools (res)
         self.qc_pool = simpy.FilterStore(env)

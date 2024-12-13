@@ -7,6 +7,7 @@ from components.ec.che import QC, ITV, YC
 from components.ec.wi import WI
 from lib.utils import convert_sim_time_to_datetime
 import sys
+import os
 sys.path.append('../')
 
 generic_move = {
@@ -65,11 +66,19 @@ class MovementTracker(DataBase):
     """ Class That Collects All Movement Events and Store Them in the Database   
     """
 
-    def __init__(self, simulation_name: str = '', conn_str_name: str = 'MONGO_DEV_CONN', db_name: str = 'terminal_simulator', collection_name: str = 'sim_move_events'):
+    def __init__(self, simulation_name: str = '', conn_str_name: str = 'MONGO_DEV_CONN', db_name: str = 'terminal_simulator',
+                 output_to_csv_file: bool = False, output_path: str = 'data/', collection_name: str = 'sim_move_events'):
         super().__init__()
         self.simulation_name = simulation_name
-        self.db = self.getMongoConnection(db_name, conn_str_name)  # Database
-        self.collection = self.db[collection_name]  # Collection
+        self.conn_str_name = conn_str_name
+        self.db_name = db_name
+        self.output_to_csv_file = output_to_csv_file
+        self.output_path = output_path
+        self.collection_name = collection_name
+        if not simulation_name:
+            self.db = self.getMongoConnection(
+                db_name, conn_str_name)  # Database
+            self.collection = self.db[collection_name]  # Collection
         self.move_events = []  # List to store move events
         self.sim_id = int(datetime.utcnow().strftime('%Y%m%d%H%M%S'))
 
@@ -379,11 +388,18 @@ class MovementTracker(DataBase):
     def push_to_mongo(self):
         """Push all logged events to MongoDB."""
         df_events = self.prepare_mv_events_for_mongo_save()
-        if not df_events.empty:
-            # Convert DataFrame to list of dicts
-            records = df_events.to_dict(orient='records')
-            self.collection.insert_many(records)
+        if self.output_to_csv_file:
+            file_path_name = os.path.join(
+                self.output_path, f"{self.collection_name}_{self.sim_id}.csv")
+            df_events.to_csv(file_path_name, index=False)
             print(
-                f"Pushed {len(records)} events to MongoDB collection: {self.collection.name}")
+                f"Saved {len(df_events)} events to CSV file: {file_path_name}")
         else:
-            print("No events to push to MongoDB.")
+            if not df_events.empty:
+                # Convert DataFrame to list of dicts
+                records = df_events.to_dict(orient='records')
+                self.collection.insert_many(records)
+                print(
+                    f"Pushed {len(records)} events to MongoDB collection: {self.collection.name}")
+            else:
+                print("No events to push to MongoDB.")

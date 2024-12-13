@@ -35,14 +35,19 @@ che_event_generic = {
 
 class CHELog(DataBase):
 
-    def __init__(self, db_name: str, string_conncetion: str):
+    def __init__(self, db_name: str, string_conncetion: str, output_to_csv_file: bool = False,
+                 output_path: str = 'data/'):
         self.db_name = db_name
         self.string_conncetion = string_conncetion
-        self.db = self.getMongoConnection(self.db_name, self.string_conncetion)
+        self.output_to_csv_file = output_to_csv_file
+        self.output_path = output_path
+        if not self.output_to_csv_file:
+            self.db = self.getMongoConnection(
+                self.db_name, self.string_conncetion)
         self.che_config_list = []
         self.che_event_list = []
         self.sim_id = None
-        self.facility_id = os.environ.get('SIMULATION_FACILITY_ID')
+        self.facility_id = os.environ.get('SIMULATION_FACILITY_ID', 'DMSLOG')
 
     def _add_che_config(self, che: object):
         """Add a CHE configuration to the list."""
@@ -213,24 +218,38 @@ class CHELog(DataBase):
     def _push_che_config(self, sim_id: int, collection_name: str = 'che_config'):
         """ Push the CHE configuration to the MongoDB collection """
         self.sim_id = sim_id
+        self.collection_name = collection_name
         df = pd.DataFrame(self.che_config_list)
         df = self.prepare_df_mongo_save(df)
-        if not df.empty:
-            self.db[collection_name].insert_many(df.to_dict(orient='records'))
-            print(
-                f"Pushed {len(df)} CHE configurations to MongoDB collection: {collection_name}")
+        if self.output_to_csv_file:
+            file_path_name = os.path.join(
+                self.output_path, f"{self.collection_name}_{self.sim_id}.csv")
+            df.to_csv(file_path_name, index=False)
         else:
-            print("No CHE configurations to push to MongoDB.")
+            if not df.empty:
+                self.db[collection_name].insert_many(
+                    df.to_dict(orient='records'))
+                print(
+                    f"Pushed {len(df)} CHE configurations to MongoDB collection: {collection_name}")
+            else:
+                print("No CHE configurations to push to MongoDB.")
 
     def _push_che_event(self, sim_id: int, collection_name: str = 'che_event_logs'):
         """ Push the CHE events to the MongoDB collection """
         self.sim_id = sim_id
+        self.collection_name = collection_name
         df = pd.DataFrame(self.che_event_list)
         df = self.prepare_df_mongo_save(df, time_columns_to_format=[
                                         'event_datetime', 'created_at'])
-        if not df.empty:
-            self.db[collection_name].insert_many(df.to_dict(orient='records'))
-            print(
-                f"Pushed {len(df)} CHE events to MongoDB collection: {collection_name}")
+        if self.output_to_csv_file:
+            file_path_name = os.path.join(
+                self.output_path, f"{self.collection_name}_{self.sim_id}.csv")
+            df.to_csv(file_path_name, index=False)
         else:
-            print("No CHE events to push to MongoDB.")
+            if not df.empty:
+                self.db[collection_name].insert_many(
+                    df.to_dict(orient='records'))
+                print(
+                    f"Pushed {len(df)} CHE events to MongoDB collection: {collection_name}")
+            else:
+                print("No CHE events to push to MongoDB.")

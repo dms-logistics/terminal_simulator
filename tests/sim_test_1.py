@@ -31,7 +31,11 @@ def generate_pow(count=[10, 10, 10, 10, 10, 10, 10, 10, 10],
     if move_kind_list is None:
         move_kind_list = ["DSCH", "LOAD", "SHOB", "YARD",
                           "SHFT", "DLVR", "RECV", "RLOD", "RDSC"]
-    df_wi = pd.read_csv("data/SPARCSN4_WI_clean_13Nov24.csv", header=0)
+    df_wi = pd.read_csv("data/SPARCSN4_WI_clean_13Dec24.csv", header=0)
+    cols = ['UFV_GKEY', 'GKEY', 'ID', 'LINE_OP', 'CATEGORY', 'FREIGHT_KIND', 'MOVE_KIND', 'POW', 'CARRIER_VISIT', 'FM_BLOCK', 'FM_BAY', 'FM_ROW', 'FM_TIER',
+            'TO_BLOCK', 'TO_BAY', 'TO_ROW', 'TO_TIER']
+    vf_cols = [c for c in df_wi.columns if c in cols]
+    df_wi = df_wi[vf_cols]
     df_wi.rename(columns={v: v.lower() for v in df_wi.columns}, inplace=True)
     unique_pow = df_wi['pow'].unique()
     pow_dict = {}
@@ -128,14 +132,16 @@ def sim():
     env = simpy.Environment()  # env,  n_itv: int, yc_block_dict: int, pow_dict
     pow_dict, df_pow = generate_pow(
         count=[10, 10], move_kind_list=["DSCH", "LOAD"])
+    carrier_visit_id = df_pow['carrier_visit'].unique()[0]
     ex_pow_dict = get_n_first_keys(pow_dict, 3)
-    activity_dict = {"MJRSSD149A": ex_pow_dict}
-    pow_carrier_dict = {k: "MJRSSD149A" for k in ex_pow_dict.keys()}
+    activity_dict = {carrier_visit_id: ex_pow_dict}
+    pow_carrier_dict = {k: carrier_visit_id for k in ex_pow_dict.keys()}
     yc_block_dict = generate_block_dict(df_pow)
     terminal = Terminal(env,
                         n_itv=6,
                         yc_block_dict=yc_block_dict,
-                        pow_dict=pow_carrier_dict
+                        pow_dict=pow_carrier_dict,
+                        output_to_csv_file=True
                         )
 
     env.process(run_terminal_activity(env, terminal, activity_dict))
